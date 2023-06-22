@@ -10,55 +10,71 @@ exploration_zone = np.array(exploration_zone)
 # Define the chromosome representation
 def create_individual(individual_size=100):
     poly = Polygon(exploration_zone)
-    chromosomes = []
-    for i in range(individual_size):
-        chromosomes.append(create_chromosome(poly.bounds))
+    bounds = poly.bounds
 
+    latitudes = np.random.uniform(bounds[0], bounds[2], size=individual_size)
+    longitudes = np.random.uniform(bounds[1], bounds[3], size=individual_size)
+    binary_values = np.random.randint(0, 2, size=individual_size)
+
+    chromosomes = np.column_stack((latitudes, longitudes, binary_values))
     return chromosomes
 
 
 def create_chromosome(bounds):
     min_x, min_y, max_x, max_y = bounds
-    latitude = random.uniform(min_x, max_x)
-    longitude = random.uniform(min_y, max_y)
-    return [latitude, longitude, random.randint(0, 1)]
+    latitude = np.random.uniform(min_x, max_x)
+    longitude = np.random.uniform(min_y, max_y)
+    binary_value = np.random.randint(0, 2)
+    return [latitude, longitude, binary_value]
 
 
 def create_population(population_size):
     # Generate a population of individuals
-    return [create_individual() for _ in range(population_size)]
+    population = np.repeat([create_individual()], population_size, axis=0)
+    return population
 
 
 # Implement the genetic operators: selection, crossover, and mutation
 def selection(population, fitness_values, num_parents):
-    # Select the best individuals as parents for reproduction based on their fitness values
-    parents = []
-    for _ in range(num_parents):
-        max_fitness_index = fitness_values.index(max(fitness_values))
-        parents.append(population[max_fitness_index])
-        # Set the fitness value of the selected parent to a very low value
-        fitness_values[max_fitness_index] = float('-inf')
+    # Convert fitness_values to a NumPy array
+    # itness_values = np.array(fitness_values)
+
+    # Select the indices of the top individuals based on fitness values
+    # top_indices = np.argpartition(-fitness_values, num_parents)[:num_parents]
+    top_indices = np.argsort(fitness_values)[-num_parents:]
+    # Retrieve the corresponding parents from the population
+    parents = population[top_indices]
+
     return parents
 
 
 def crossover_operation(parent1, parent2):
-    # Perform uniform crossover between parent1 and parent2
-    offspring = []
-    for gene_index in range(len(parent1)):
-        if random.random() < 0.5:
-            offspring.append(parent1[gene_index])
-        else:
-            offspring.append(parent2[gene_index])
+    # Convert parent1 and parent2 to NumPy arrays
+    # parent1 = np.array(parent1)
+    # parent2 = np.array(parent2)
+
+    # Generate a mask for selecting genes from parent1 or parent2
+    mask = np.random.choice([True, False], size=len(parent1))
+
+    # Perform crossover using the mask
+    offspring = np.where(mask[:, None], parent1, parent2)
+
+    # Convert offspring back to a list
+    # offspring = offspring.tolist()
+
     return offspring
 
 
 def crossover(parents, num_offsprings):
     # Perform crossover between parents to generate offspring
     offsprings = []
+    num_parents = len(parents)
     for _ in range(num_offsprings):
-        parent1, parent2 = random.sample(parents, 2)
-        # Perform crossover operation (e.g., one-point crossover, two-point crossover, etc.)
-        # Your implementation here
+        # Randomly select two distinct parents
+        parent_indices = np.random.choice(num_parents, size=2, replace=False)
+        parent1, parent2 = parents[parent_indices[0]], parents[parent_indices[1]]
+
+        # Perform crossover operation using crossover_operation function
         offspring = crossover_operation(parent1, parent2)
         offsprings.append(offspring)
     return offsprings
@@ -67,34 +83,37 @@ def crossover(parents, num_offsprings):
 def mutation_operation(individual, mutation_rate):
     # Mutate individual by randomly altering some genes
     mutated_individual = individual.copy()
-    poly = Polygon(exploration_zone)
 
-    for gene_index in range(len(mutated_individual)):
-        if random.random() < mutation_rate:
-            # Generate a random value for the mutated gene within a valid range
-            _generate_r = create_chromosome(poly.bounds)
-            mutated_individual[gene_index] = _generate_r
+    # Generate a random mask for gene mutation
+    mask = np.random.random(size=len(mutated_individual)) < mutation_rate
+
+    # Apply mutation to the genes selected by the mask
+    poly = Polygon(exploration_zone)
+    mutated_genes = np.array([create_chromosome(poly.bounds) for _ in range(len(mutated_individual))])
+    mutated_individual[mask] = mutated_genes[mask]
+
     return mutated_individual
 
 
 def mutation(offsprings, mutation_rate):
     # Perform mutation on the offsprings
-    mutated_offsprings = []
-    for offspring in offsprings:
-        mutated_offspring = mutation_operation(offspring, mutation_rate)
-        mutated_offsprings.append(mutated_offspring)
+    mutated_offsprings = np.stack([mutation_operation(offspring, mutation_rate) for offspring in offsprings])
     return mutated_offsprings
 
 
 def calculate_fitness(population):
-    fitness_values = []
-    # Cada Individuo de la poblacion es una solución, cada individuo tiene el formato [X,Y,A].
-    # X,Y son las coordenadas y A es una flag de activación, por tanto solo se usarán los círculos que esten activos
-    for solution in population:
-        activated_points = [point for point in solution if point[2] == 1]
-        fitness_values.append(
-            -(1 - percentage_polygon(activated_points, 253.3, exploration_zone)) * 10 + len(activated_points))
+    fitness_values = np.zeros(len(population))
+    for i, solution in enumerate(population):
+        activated_points = solution[solution[:, 2] == 1]
+        fitness_values[i] = calculate_fitness_individual(activated_points)
     return fitness_values
+
+
+def calculate_fitness_individual(activated_points):
+    covered_area = percentage_polygon(activated_points[:, :2], 253.3, exploration_zone)
+    num_activated_points = np.sum(activated_points[:, 2])
+    fitness_value = -(1 - covered_area) * 10 + num_activated_points
+    return fitness_value
 
 
 # Perform the generation evolution
@@ -113,7 +132,7 @@ def evolve_population(population, num_parents, offspring_size):
     mutated_population = mutation(offspring_population, _mutation_rate)
 
     # Combine parents and mutated offspring population
-    new_population = parents + mutated_population
+    new_population = np.concatenate((parents, mutated_population), axis=0)
 
     return new_population
 
@@ -121,7 +140,7 @@ def evolve_population(population, num_parents, offspring_size):
 # Define termination criteria
 def termination_criteria(generation_count, max_generations, population):
     # Check if the termination criteria (e.g., maximum generations) have been met
-    return generation_count >= max_generations or np.average(calculate_fitness(population)) > 1100
+    return generation_count >= max_generations or np.average(calculate_fitness(population)) > 1000
 
 
 def percentage_polygon(points, radius_point, polygon):
@@ -133,24 +152,19 @@ def percentage_polygon(points, radius_point, polygon):
     :return: Percentage of the polygon covered by circles
     """
     covered_area = 0.0
-
-    # Create a circle with the given radius for each point
-    circles = [Point(point[0], point[1]).buffer(radius_point) for point in points]
-
-    # Create a polygon object from the polygon coordinates
+    circles = np.array([Point(point[0], point[1]).buffer(radius_point) for point in points])
     poly = Polygon(polygon)
 
-    # Iterate over each circle
     total_area = poly.area
-    for k, circle1 in enumerate(circles):
+
+    for k in range(len(circles)):
+        circle1 = circles[k]
         for circle2 in circles[k + 1:]:
             circle1 = circle1.difference(circle2)
         intersection = poly.intersection(circle1)
         intersection_area = intersection.area
-
         covered_area += intersection_area
 
-    # Calculate the percentage of the polygon covered by circles
     percentage_covered = (covered_area / total_area) * 100
 
     return percentage_covered

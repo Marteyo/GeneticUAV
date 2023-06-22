@@ -2,10 +2,10 @@ from geneticUAV import *
 from map_plots import *
 
 # Set the parameter values
-population_size: int = 100
-num_parents: int = 10
+population_size: int = 50
+num_parents: int = 5
 offspring_size = population_size - num_parents
-max_generations: int = 100
+max_generations: int = 20
 
 
 # Main genetic algorithm
