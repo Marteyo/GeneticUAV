@@ -205,12 +205,7 @@ def not_in_exploration_zone(points, radius_point, polygon):
     circles = np.array([Point(point[0], point[1]).buffer(radius_point) for point in points])
     poly = Polygon(polygon)
 
-    num_circles_no_overlap = 0
-
-    for k in range(len(circles)):
-        intersection = poly.intersection(circles[k])
-        intersection_area = intersection.area
-        if intersection_area == 0:
-            num_circles_no_overlap += 1
+    intersection_areas = np.array([poly.intersection(circle).area for circle in circles])
+    num_circles_no_overlap = np.count_nonzero(intersection_areas == 0)
 
     return num_circles_no_overlap
