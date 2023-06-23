@@ -3,6 +3,7 @@ import random
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 from data import exploration_zone
+from shapely.ops import unary_union
 
 exploration_zone = np.array(exploration_zone)
 
@@ -30,7 +31,7 @@ def create_chromosome(bounds):
 
 def create_population(population_size):
     # Generate a population of individuals
-    population = np.repeat([create_individual()], population_size, axis=0)
+    population = np.array([create_individual() for _ in range(population_size)])
     return population
 
 
@@ -110,14 +111,20 @@ def calculate_fitness(population):
 
 
 def calculate_fitness_individual(activated_points):
-    covered_area = percentage_polygon(activated_points[:, :2], 253.3, exploration_zone)
+    radius_point = 253.3
+    covered_area = percentage_polygon(activated_points[:, :2], radius_point, exploration_zone)
+    overlap_area = circle_overlap_rate(activated_points[:, :2], radius_point)
+    not_in_zone = not_in_exploration_zone(activated_points[:, :2], radius_point, exploration_zone)
     num_activated_points = np.sum(activated_points[:, 2])
-    fitness_value = -(1 - covered_area) * 10 + num_activated_points
+    tradeoff = 0.3
+    fitness_value = (tradeoff * overlap_area + (
+            1 - tradeoff) * covered_area) * 1000 - num_activated_points - not_in_zone*10
+    # fitness_value = ((overlap_area + covered_area)/2) * 1000 - num_activated_points
     return fitness_value
 
 
 # Perform the generation evolution
-def evolve_population(population, num_parents, offspring_size):
+def evolve_population(population, num_parents, offspring_size, mutation_rate):
     # Evaluate fitness
     fitness_values = calculate_fitness(population)
 
@@ -128,8 +135,7 @@ def evolve_population(population, num_parents, offspring_size):
     offspring_population = crossover(parents, offspring_size)
 
     # Perform mutation
-    _mutation_rate = 0.04
-    mutated_population = mutation(offspring_population, _mutation_rate)
+    mutated_population = mutation(offspring_population, mutation_rate)
 
     # Combine parents and mutated offspring population
     new_population = np.concatenate((parents, mutated_population), axis=0)
@@ -165,6 +171,46 @@ def percentage_polygon(points, radius_point, polygon):
         intersection_area = intersection.area
         covered_area += intersection_area
 
-    percentage_covered = (covered_area / total_area) * 100
+    percentage_covered = (covered_area / total_area)
 
     return percentage_covered
+
+
+def circle_overlap_rate(points, radius_point):
+    """
+    Calculate the rate of overlap between circles in a given set of points
+    :param points: Center of the circles
+    :param radius_point: Radius of the circles
+    :return: Rate of overlap between circles
+    """
+    circles = [Point(point[0], point[1]).buffer(radius_point) for point in points]
+    union = unary_union(circles)
+
+    total_area = sum(circle.area for circle in circles)
+    intersection_area = union.area
+
+    overlap_rate = intersection_area / total_area
+
+    return overlap_rate
+
+
+def not_in_exploration_zone(points, radius_point, polygon):
+    """
+    Calculate the number of circles with no overlap with the polygon
+    :param points: Center of the circles
+    :param radius_point: Radius of the circles
+    :param polygon: Polygon to be covered
+    :return: Number of circles with no overlap with the polygon
+    """
+    circles = np.array([Point(point[0], point[1]).buffer(radius_point) for point in points])
+    poly = Polygon(polygon)
+
+    num_circles_no_overlap = 0
+
+    for k in range(len(circles)):
+        intersection = poly.intersection(circles[k])
+        intersection_area = intersection.area
+        if intersection_area == 0:
+            num_circles_no_overlap += 1
+
+    return num_circles_no_overlap
